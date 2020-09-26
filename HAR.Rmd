@@ -1,0 +1,124 @@
+---
+title: "HAR"
+author: "Tarek Ammouri"
+date: "9/21/2020"
+output: html_document
+---
+
+# Introduction
+
+The aim of this project is to produce a support vector machine on human activity recognition.
+
+The data is split into test set and training set. The test set will be used for fitting the support vector machine algorithm and the test set will be used for validation.
+
+# Data Exploration
+Let us first explore the training data.
+
+```{r, echo = FALSE, cache = TRUE}
+train_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(train_url, destfile = "training.csv" )
+training <- read.csv("training.csv")
+
+test_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(test_url, destfile = "testing.csv" )
+testing <- read.csv("testing.csv")
+
+str(training)
+```
+
+```{r, echo = FALSE}
+summary(training)
+```
+
+As it can be seen, there are many variables with NA value
+
+```{r, echo = FALSE}
+NAA <- colSums(is.na(training))
+print(NAA)
+```
+
+All column which have NA values have a ratio of NA to values over 90%, so only columns with zero NA values will be selected.
+
+```{r, echo = FALSE, message= FALSE}
+cols1 <- names(NAA[NAA == 0])
+library(dplyr)
+training_selected <- training %>%  select(all_of(cols1))
+Col_classes <- lapply(training_selected, class)
+cols2 <- names(Col_classes[Col_classes %in% c("numeric", "integer")])
+cols2 <- cols2[!(cols2 %in% c("raw_timestamp_part_1", 
+                              "raw_timestamp_part_2",
+                              "num_window",
+                              "X"))]
+cols_all <- c(cols2, "classe")
+
+training_selected <- training_selected %>%  select(all_of(cols_all))
+```
+
+Even after excluding all these variables, the data set still has `r dim(training_selected)[2]` variables, in order to get red of them, most 10 correlated variables with the class variable.
+
+```{r, echo = FALSE}
+training_selected$classe <- as.factor(training_selected$classe)
+training_selected$classe1 <- as.numeric(training_selected$classe)
+classe_data <- training_selected$classe
+training_selected <- training_selected %>% select(-classe)
+cor_matrix <- as.data.frame(cor(training_selected))
+cor_matrix <- cor_matrix %>% arrange(classe1)
+names_select <- row.names(tail(cor_matrix, 11))
+training_selected <- training_selected %>% select(all_of(names_select))
+training_selected <- training_selected %>% select(-classe1) %>% 
+    mutate(classe = classe_data)
+names(training_selected)
+```
+
+# The model
+
+The model to be used for the data is cross validation model, the data is going to be split into test and training set in order to test it before using it on new data.
+After subseting the data, a cross validation model will be fitted. The model to be used with the cross validation is a decision tree model.
+
+```{r, echo = FALSE, message = FALSE, cache = TRUE}
+library(caret)
+library(randomForest)
+set.seed(1)
+
+trainIndex <- createDataPartition(training_selected$classe, p=0.7, list = FALSE)
+data_train <- training_selected[ trainIndex,]
+data_test <- training_selected[-trainIndex,]
+model_fit <- train(classe ~ ., data = data_train, 
+                   method = "rpart",
+                   trControl=trainControl(method = "cv", number = 10))
+
+library(rattle)
+fancyRpartPlot(model_fit$finalModel)
+```
+
+# Model
+
+```{r, echo = FALSE}
+model_fit
+```
+
+# Prediction on test set
+
+```{r, echo = FALSE, cache = TRUE}
+class_predicted <- predict(model_fit, data_test)
+cmat <- confusionMatrix(class_predicted, data_test$classe)
+cmat
+```
+As it can be seen from the model, the accuracy is too low of the model.
+
+Try KNN model
+```{r, echo = FALSE, cache = TRUE}
+set.seed(1)
+model_fit2 <- train(classe ~ ., data = data_train, 
+                   method = "rf")
+class_predicted2 <- predict(model_fit2, data_test)
+cmat2 <- confusionMatrix(class_predicted2, data_test$classe)
+cmat2
+```
+
+As the random forest gave the best results, it will be used for prediction.
+
+
+# Conclusions
+
+The model chosen in the assignment was decision trees as they are the suitable for factor variables. First decision tree with cross validation was tested, bu it didn't yield accuracy, that's why random forest model was used.
